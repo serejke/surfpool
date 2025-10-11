@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.10.9"
+version = "0.11.0"
 edition = "2024"
 description = "Surfpool is the best place to train before surfing Solana."
 license = "Apache-2.0"
@@ -144,6 +144,7 @@ tracing = { version = "0.1.41", default-features = false }
 url = { version = "1.7.2", default-features = false }
 uuid = "1.15.1"
 zip = { version = "0.6", features = ["deflate"], default-features = false }
+sha2 = { version = "0.10" }
 
 surfpool-core = { path = "crates/core", default-features = false }
 surfpool-db = { path = "crates/db" }
