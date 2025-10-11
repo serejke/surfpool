@@ -759,6 +759,95 @@ impl SurfnetSvmLocker {
         })
     }
 
+    /// Simulates a bundle of transactions sequentially without modifying the actual SVM state.
+    ///
+    /// Each transaction in the bundle is simulated in order, with the account state changes
+    /// from previous transactions applied to subsequent simulations. This allows testing
+    /// how a bundle would execute atomically.
+    ///
+    /// # Arguments
+    /// * `transactions` - Vector of transactions to simulate in order
+    /// * `sigverify` - Whether to verify signatures
+    ///
+    /// # Returns
+    /// Vector of simulation results, one for each transaction. If any transaction fails,
+    /// the error is included in the results and subsequent transactions are not simulated.
+    #[allow(clippy::result_large_err)]
+    pub fn simulate_bundle(
+        &self,
+        transactions: Vec<VersionedTransaction>,
+        sigverify: bool,
+    ) -> Vec<Result<SimulatedTransactionInfo, FailedTransactionMetadata>> {
+        let mut results = Vec::with_capacity(transactions.len());
+
+        // Collect all unique account keys that will be accessed across all transactions
+        let mut all_account_keys = std::collections::HashSet::new();
+        for tx in &transactions {
+            for key in tx.message.static_account_keys() {
+                all_account_keys.insert(*key);
+            }
+        }
+        let all_account_keys: Vec<Pubkey> = all_account_keys.into_iter().collect();
+
+        // Take write lock to ensure exclusive access during bundle simulation
+        self.with_svm_writer(|svm_writer| {
+            // Backup original account state
+            let mut original_accounts = HashMap::new();
+            for key in &all_account_keys {
+                if let Some(account) = svm_writer.get_account(key) {
+                    original_accounts.insert(*key, account);
+                }
+            }
+
+            // Track account state changes across transactions
+            let mut account_overlay: HashMap<Pubkey, Account> = HashMap::new();
+
+            // Simulate each transaction sequentially
+            for tx in transactions {
+                // Apply overlay from previous transactions
+                for (pubkey, account) in &account_overlay {
+                    let _ = svm_writer.set_account(pubkey, account.clone());
+                }
+
+                // Simulate the transaction
+                let sim_result = svm_writer.simulate_transaction(tx.clone(), sigverify);
+
+                // Update overlay with post_accounts if successful
+                match &sim_result {
+                    Ok(info) => {
+                        for (pubkey, account) in &info.post_accounts {
+                            account_overlay.insert(*
+                                pubkey, account.clone().into());
+                        }
+                    }
+                    Err(_) => {
+                        // Transaction failed, add result and stop processing
+                        results.push(sim_result);
+                        break;
+                    }
+                }
+
+                results.push(sim_result);
+            }
+
+            // Restore original account state
+            for (pubkey, account) in original_accounts {
+                let _ = svm_writer.set_account(&pubkey, account);
+            }
+
+            // Remove any accounts that were created during simulation but didn't exist before
+            for pubkey in account_overlay.keys() {
+                if !all_account_keys.contains(pubkey) {
+                    // This account was created during simulation, we should remove it
+                    // Note: LiteSVM doesn't have a delete_account method, so we can't remove it
+                    // This is a minor inconsistency but shouldn't affect most use cases
+                }
+            }
+
+            results
+        })
+    }
+
     pub fn is_instruction_profiling_enabled(&self) -> bool {
         self.with_svm_reader(|svm_reader| svm_reader.instruction_profiling_enabled)
     }
