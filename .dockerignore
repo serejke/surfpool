@@ -1,2 +1,6 @@
 /target
 /examples
+.surfpool
+.github
+.claude
+.cargo
