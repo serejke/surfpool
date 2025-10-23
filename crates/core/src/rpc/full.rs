@@ -2149,7 +2149,8 @@ impl Full for SurfpoolFullRpc {
             .get_latest_blockhash(&commitment)
             .unwrap_or_else(|| svm_locker.latest_absolute_blockhash());
 
-        let last_valid_block_height = committed_latest_slot + MAX_RECENT_BLOCKHASHES as u64;
+        let current_block_height = svm_locker.get_epoch_info().block_height;
+        let last_valid_block_height = current_block_height + MAX_RECENT_BLOCKHASHES as u64;
         Ok(RpcResponse {
             context: RpcResponseContext::new(svm_locker.get_latest_absolute_slot()),
             value: RpcBlockhash {
@@ -3208,11 +3209,8 @@ mod tests {
                 .get_latest_blockhash(&commitment)
                 .unwrap();
 
-            let committed_slot = setup
-                .context
-                .svm_locker
-                .get_slot_for_commitment(&commitment);
-            let expected_last_valid_block_height = committed_slot + MAX_RECENT_BLOCKHASHES as u64;
+            let current_block_height = setup.context.svm_locker.get_epoch_info().block_height;
+            let expected_last_valid_block_height = current_block_height + MAX_RECENT_BLOCKHASHES as u64;
 
             assert_eq!(
                 res.value.blockhash,
@@ -3244,11 +3242,8 @@ mod tests {
                 .get_latest_blockhash(&commitment)
                 .unwrap();
 
-            let committed_slot = setup
-                .context
-                .svm_locker
-                .get_slot_for_commitment(&commitment);
-            let expected_last_valid_block_height = committed_slot + MAX_RECENT_BLOCKHASHES as u64;
+            let current_block_height = setup.context.svm_locker.get_epoch_info().block_height;
+            let expected_last_valid_block_height = current_block_height + MAX_RECENT_BLOCKHASHES as u64;
 
             assert_eq!(
                 res.value.blockhash,
@@ -3280,11 +3275,8 @@ mod tests {
                 .get_latest_blockhash(&commitment)
                 .unwrap();
 
-            let committed_slot = setup
-                .context
-                .svm_locker
-                .get_slot_for_commitment(&commitment);
-            let expected_last_valid_block_height = committed_slot + MAX_RECENT_BLOCKHASHES as u64;
+            let current_block_height = setup.context.svm_locker.get_epoch_info().block_height;
+            let expected_last_valid_block_height = current_block_height + MAX_RECENT_BLOCKHASHES as u64;
 
             assert_eq!(
                 res.value.blockhash,
