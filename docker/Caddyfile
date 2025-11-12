@@ -1,0 +1,26 @@
+# UI (port 18488)
+solana-surfpool.domain.com {
+  encode zstd gzip
+  reverse_proxy surfpool:18488
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+  }
+}
+
+# RPC (port 8899)
+rpc.solana-surfpool.domain.com {
+  encode zstd gzip
+  reverse_proxy surfpool:8899
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+  }
+}
+
+# WebSocket (port 8900)
+ws.solana-surfpool.domain.com {
+  encode zstd gzip
+  reverse_proxy surfpool:8900
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+  }
+}

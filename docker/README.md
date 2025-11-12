@@ -1,0 +1,1 @@
+Replace `domain.com` with your domain.

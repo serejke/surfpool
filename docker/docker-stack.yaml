@@ -1,0 +1,55 @@
+# docker-stack.yml
+version: "3.8"
+
+services:
+  surfpool:
+    image: ghcr.io/serejke/surfpool:8c7abbe
+    environment:
+      - SURFPOOL_NETWORK_HOST=0.0.0.0
+      - SURFPOOL_DATASOURCE_RPC_URL=${SURFPOOL_DATASOURCE_RPC_URL:-https://api.mainnet-beta.solana.com}
+      - SURFPOOL_PUBLIC_RPC_URL=https://rpc.solana-surfpool.domain.com
+      - SURFPOOL_PUBLIC_WS_URL=wss://ws.solana-surfpool.domain.com
+      - SURFPOOL_PUBLIC_STUDIO_URL=https://solana-surfpool.domain.com
+    networks:
+      - web
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+      placement:
+        max_replicas_per_node: 1
+
+  caddy:
+    image: caddy:2
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: ingress
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: ingress
+    configs:
+      - source: surfpool_caddyfile_v3   # NEW config version
+        target: /etc/caddy/Caddyfile
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - web
+    deploy:
+      restart_policy:
+        condition: any
+
+networks:
+  web:
+    driver: overlay
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+configs:
+  surfpool_caddyfile_v3:
+    file: ./Caddyfile
