@@ -7,9 +7,9 @@ services:
     environment:
       - SURFPOOL_NETWORK_HOST=0.0.0.0
       - SURFPOOL_DATASOURCE_RPC_URL=${SURFPOOL_DATASOURCE_RPC_URL:-https://api.mainnet-beta.solana.com}
-      - SURFPOOL_PUBLIC_RPC_URL=https://rpc.solana-surfpool.domain.com
-      - SURFPOOL_PUBLIC_WS_URL=wss://ws.solana-surfpool.domain.com
-      - SURFPOOL_PUBLIC_STUDIO_URL=https://solana-surfpool.domain.com
+      - SURFPOOL_PUBLIC_RPC_URL=${SURFPOOL_PUBLIC_RPC_URL:-https://rpc.solana-surfpool.domain.com}
+      - SURFPOOL_PUBLIC_WS_URL=${SURFPOOL_PUBLIC_WS_URL:-wss://ws.solana-surfpool.domain.com}
+      - SURFPOOL_PUBLIC_STUDIO_URL=${SURFPOOL_PUBLIC_STUDIO_URL:-https://solana-surfpool.domain.com}
     networks:
       - web
     deploy:
