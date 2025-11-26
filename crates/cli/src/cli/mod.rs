@@ -152,7 +152,7 @@ pub struct StartSimnet {
     #[arg(long = "slot-time", short = 't', default_value_t = DEFAULT_SLOT_TIME_MS)]
     pub slot_time: u64,
     /// Set a datasource RPC URL (cannot be used with --network). Can also be set via SURFPOOL_DATASOURCE_RPC_URL. (eg. surfpool start --rpc-url https://api.mainnet-beta.solana.com)
-    #[arg(long = "rpc-url", short = 'u', conflicts_with = "network", default_value = DEFAULT_RPC_URL)]
+    #[arg(long = "rpc-url", short = 'u', conflicts_with = "network", env = "SURFPOOL_DATASOURCE_RPC_URL")]
     pub rpc_url: Option<String>,
     /// Choose a predefined network (cannot be used with --rpc-url) (eg. surfpool start --network mainnet)
     #[arg(long = "network", short = 'n', value_enum, conflicts_with = "rpc_url")]
@@ -323,13 +323,10 @@ impl StartSimnet {
                 Some(NetworkType::Mainnet) => DEFAULT_RPC_URL.to_string(),
                 Some(NetworkType::Devnet) => DEVNET_RPC_URL.to_string(),
                 Some(NetworkType::Testnet) => TESTNET_RPC_URL.to_string(),
-                None => match self.rpc_url {
-                    Some(ref rpc_url) => rpc_url.clone(),
-                    None => match env::var("SURFPOOL_DATASOURCE_RPC_URL") {
-                        Ok(value) => value,
-                        _ => DEFAULT_RPC_URL.to_string(),
-                    },
-                },
+                None => self
+                    .rpc_url
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_RPC_URL.to_string()),
             })
         } else {
             None
