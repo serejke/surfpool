@@ -82,9 +82,14 @@ impl Jito for SurfpoolJitoRpc {
         let mut bundle_signatures = Vec::new();
 
         // Process each transaction in the bundle sequentially using Full RPC
+        // Force skip_preflight to match Jito Block Engine behavior (no simulation on sendBundle)
         for (idx, tx_data) in transactions.iter().enumerate() {
+            let bundle_config = Some(RpcSendTransactionConfig {
+                skip_preflight: true,
+                ..config.clone().unwrap_or_default()
+            });
             // Delegate to Full RPC's sendTransaction method
-            match full_rpc.send_transaction(meta.clone(), tx_data.clone(), config.clone()) {
+            match full_rpc.send_transaction(meta.clone(), tx_data.clone(), bundle_config) {
                 Ok(signature_str) => {
                     // Parse the signature to collect for bundle ID calculation
                     let signature = Signature::from_str(&signature_str).map_err(|e| {
