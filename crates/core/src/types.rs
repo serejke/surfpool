@@ -91,13 +91,12 @@ impl TransactionWithStatusMeta {
         post_token_program_ids: &[Pubkey],
         loaded_addresses: LoadedAddresses,
     ) -> Self {
-        let signatures_len = transaction.signatures.len();
         Self {
             slot,
             transaction,
             meta: TransactionStatusMeta {
                 status: Ok(()),
-                fee: 5000 * signatures_len as u64,
+                fee: transaction_meta.fee,
                 pre_balances: accounts_before
                     .iter()
                     .map(|a| a.clone().map(|a| a.lamports).unwrap_or(0))
@@ -332,9 +331,6 @@ impl TransactionWithStatusMeta {
             .iter()
             .map(|a| a.as_ref().map(|a| a.lamports).unwrap_or(0))
             .collect();
-
-        let fee = 5000 * transaction.signatures.len() as u64;
-
         let post_balances: Vec<u64> = accounts_after
             .iter()
             .map(|a| a.clone().map(|a| a.lamports).unwrap_or(0))
@@ -363,7 +359,7 @@ impl TransactionWithStatusMeta {
             transaction,
             meta: TransactionStatusMeta {
                 status: Err(failure.err.clone()),
-                fee,
+                fee: failure.meta.fee,
                 pre_balances,
                 post_balances,
                 inner_instructions: Some(
@@ -513,6 +509,7 @@ pub fn surfpool_tx_metadata_to_litesvm_tx_metadata(
         return_data: metadata.return_data.clone(),
         inner_instructions: metadata.inner_instructions.clone(),
         signature: metadata.signature,
+        fee: metadata.fee,
     }
 }
 
