@@ -4,3 +4,10 @@
 .github
 .claude
 .cargo
+.git
+.idea
+.vscode
+*.md
+Dockerfile*
+docker-compose*.yml
+.env*
