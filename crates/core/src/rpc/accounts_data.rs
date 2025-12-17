@@ -1,16 +1,9 @@
-use super::{RunloopContext, SurfnetRpcContext};
-use crate::{
-    error::{SurfpoolError, SurfpoolResult},
-    rpc::{utils::verify_pubkey, State},
-    surfnet::locker::{is_supported_token_program, SvmAccessContext},
-    types::{MintAccount, TokenAccount},
-};
 use jsonrpc_core::{BoxFuture, Result};
 use jsonrpc_derive::rpc;
 use solana_account_decoder::{
-    parse_account_data::SplTokenAdditionalDataV2,
-    parse_token::{parse_token_v3, TokenAccountType, UiTokenAmount},
     UiAccount,
+    parse_account_data::SplTokenAdditionalDataV2,
+    parse_token::{TokenAccountType, UiTokenAmount, parse_token_v3},
 };
 use solana_client::{
     rpc_config::RpcAccountInfoConfig,
@@ -20,7 +13,14 @@ use solana_clock::Slot;
 use solana_commitment_config::CommitmentConfig;
 use solana_rpc_client_api::response::Response as RpcResponse;
 use solana_runtime::commitment::BlockCommitmentArray;
-use crate::surfnet::GetAccountResult;
+
+use super::{RunloopContext, SurfnetRpcContext};
+use crate::{
+    error::{SurfpoolError, SurfpoolResult},
+    rpc::{State, utils::verify_pubkey},
+    surfnet::{GetAccountResult, locker::is_supported_token_program},
+    types::{MintAccount, TokenAccount},
+};
 
 #[rpc]
 pub trait AccountsData {
@@ -370,12 +370,11 @@ impl AccountsData for SurfpoolAccountsDataRpc {
             Err(e) => return e.into(),
         };
 
+        let commitment = config.commitment.unwrap_or_default();
         Box::pin(async move {
-            let SvmAccessContext {
-                slot,
-                inner: account_update,
-                ..
-            } = svm_locker.get_account(&remote_ctx, &pubkey, None).await?;
+            let ctx = svm_locker.get_account(&remote_ctx, &pubkey, None).await?;
+            let slot = ctx.slot_for_commitment(&commitment);
+            let account_update = ctx.inner;
             svm_locker.write_account_update(account_update.clone());
 
             let ui_account = if let Some(((pubkey, account), token_data)) =
@@ -426,14 +425,13 @@ impl AccountsData for SurfpoolAccountsDataRpc {
             Err(e) => return e.into(),
         };
 
+        let commitment = config.commitment.unwrap_or_default();
         Box::pin(async move {
-            let SvmAccessContext {
-                slot,
-                inner: account_updates,
-                ..
-            } = svm_locker
+            let ctx = svm_locker
                 .get_multiple_accounts(&remote_ctx, &pubkeys, None)
                 .await?;
+            let slot = ctx.slot_for_commitment(&commitment);
+            let account_updates = ctx.inner;
 
             svm_locker.write_multiple_account_updates(&account_updates);
 
@@ -444,7 +442,7 @@ impl AccountsData for SurfpoolAccountsDataRpc {
                     GetAccountResult::None(key) => *key,
                     GetAccountResult::FoundAccount(key, _, _) => *key,
                     GetAccountResult::FoundProgramAccount((key, _), _) => *key,
-                    GetAccountResult::FoundTokenAccount((key, _), _) => *key
+                    GetAccountResult::FoundTokenAccount((key, _), _) => *key,
                 };
                 account_map.insert(pubkey, account_update);
             }
@@ -535,6 +533,7 @@ impl AccountsData for SurfpoolAccountsDataRpc {
             Err(e) => return e.into(),
         };
 
+        let commitment_config = commitment.unwrap_or_default();
         Box::pin(async move {
             let token_account_result = svm_locker
                 .get_account(&remote_ctx, &pubkey, None)
@@ -560,13 +559,11 @@ impl AccountsData for SurfpoolAccountsDataRpc {
                 .into());
             };
 
-            let SvmAccessContext {
-                slot,
-                inner: mint_account_result,
-                ..
-            } = svm_locker
+            let ctx = svm_locker
                 .get_account(&remote_ctx, &mint_pubkey, None)
                 .await?;
+            let slot = ctx.slot_for_commitment(&commitment_config);
+            let mint_account_result = ctx.inner;
 
             svm_locker.write_account_update(mint_account_result.clone());
 
@@ -623,14 +620,13 @@ impl AccountsData for SurfpoolAccountsDataRpc {
             Err(e) => return e.into(),
         };
 
+        let commitment_config = commitment.unwrap_or_default();
         Box::pin(async move {
-            let SvmAccessContext {
-                slot,
-                inner: mint_account_result,
-                ..
-            } = svm_locker
+            let ctx = svm_locker
                 .get_account(&remote_ctx, &mint_pubkey, None)
                 .await?;
+            let slot = ctx.slot_for_commitment(&commitment_config);
+            let mint_account_result = ctx.inner;
 
             svm_locker.write_account_update(mint_account_result.clone());
 
@@ -696,7 +692,7 @@ mod tests {
     use solana_keypair::Keypair;
     use solana_program_option::COption;
     use solana_program_pack::Pack;
-    use solana_pubkey::{new_rand, Pubkey};
+    use solana_pubkey::{Pubkey, new_rand};
     use solana_signer::Signer;
     use solana_system_interface::instruction::create_account;
     use solana_transaction::Transaction;
@@ -708,7 +704,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        surfnet::{remote::SurfnetRemoteClient, GetAccountResult},
+        surfnet::{GetAccountResult, remote::SurfnetRemoteClient},
         tests::helpers::TestSetup,
         types::SyntheticBlockhash,
     };
@@ -1580,17 +1576,25 @@ mod tests {
 
         // First account should be account1 with 1M lamports
         assert!(response.value[0].is_some());
-        assert_eq!(response.value[0].as_ref().unwrap().lamports, 1_000_000,
-            "First element should be account1");
+        assert_eq!(
+            response.value[0].as_ref().unwrap().lamports,
+            1_000_000,
+            "First element should be account1"
+        );
 
         // Second account should be None (pk2 doesn't exist locally or remotely)
-        assert!(response.value[1].is_none(),
-            "Second element should be None for missing pk2");
+        assert!(
+            response.value[1].is_none(),
+            "Second element should be None for missing pk2"
+        );
 
         // Third account should be account3 with 3M lamports
         assert!(response.value[2].is_some());
-        assert_eq!(response.value[2].as_ref().unwrap().lamports, 3_000_000,
-            "Third element should be account3");
+        assert_eq!(
+            response.value[2].as_ref().unwrap().lamports,
+            3_000_000,
+            "Third element should be account3"
+        );
 
         println!("✅ Account order preserved with remote: [1M lamports, None, 3M lamports]");
     }

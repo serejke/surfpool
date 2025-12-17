@@ -12,7 +12,7 @@ use solana_client::{
     },
 };
 use solana_clock::Slot;
-use solana_commitment_config::{CommitmentConfig, CommitmentLevel};
+use solana_commitment_config::CommitmentLevel;
 use solana_epoch_info::EpochInfo;
 use solana_rpc_client_api::response::Response as RpcResponse;
 
@@ -20,7 +20,7 @@ use super::{RunloopContext, SurfnetRpcContext};
 use crate::{
     SURFPOOL_IDENTITY_PUBKEY,
     rpc::{State, utils::verify_pubkey},
-    surfnet::{FINALIZATION_SLOT_THRESHOLD, GetAccountResult, locker::SvmAccessContext},
+    surfnet::{FINALIZATION_SLOT_THRESHOLD, GetAccountResult},
 };
 
 const SURFPOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -586,27 +586,30 @@ impl Minimal for SurfpoolMinimalRpc {
         &self,
         meta: Self::Metadata,
         pubkey_str: String,
-        _config: Option<RpcContextConfig>, // TODO: use config
+        config: Option<RpcContextConfig>,
     ) -> BoxFuture<Result<RpcResponse<u64>>> {
         let pubkey = match verify_pubkey(&pubkey_str) {
             Ok(res) => res,
             Err(e) => return e.into(),
         };
 
+        let commitment = config
+            .as_ref()
+            .and_then(|c| c.commitment)
+            .unwrap_or_default();
+
         let SurfnetRpcContext {
             svm_locker,
             remote_ctx,
-        } = match meta.get_rpc_context(CommitmentConfig::confirmed()) {
+        } = match meta.get_rpc_context(commitment) {
             Ok(res) => res,
             Err(e) => return e.into(),
         };
 
         Box::pin(async move {
-            let SvmAccessContext {
-                slot,
-                inner: account_update,
-                ..
-            } = svm_locker.get_account(&remote_ctx, &pubkey, None).await?;
+            let ctx = svm_locker.get_account(&remote_ctx, &pubkey, None).await?;
+            let slot = ctx.slot_for_commitment(&commitment);
+            let account_update = ctx.inner;
 
             let balance = match &account_update {
                 GetAccountResult::FoundAccount(_, account, _)

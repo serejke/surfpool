@@ -916,7 +916,8 @@ impl Rpc for SurfpoolWsRpc {
                 return;
             }
         };
-        let slot = svm_locker.with_svm_reader(|svm| svm.get_latest_absolute_slot());
+        let commitment = config.commitment.unwrap_or_default();
+        let slot = svm_locker.get_slot_for_commitment(&commitment);
 
         self.tokio_handle.spawn(async move {
             if let Ok(mut guard) = account_active.write() {

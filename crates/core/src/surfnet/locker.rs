@@ -77,6 +77,18 @@ use crate::{
     },
 };
 
+/// Adjusts a slot value based on commitment level.
+/// - Processed: no adjustment (current slot)
+/// - Confirmed: slot - 1
+/// - Finalized: slot - FINALIZATION_SLOT_THRESHOLD (31)
+pub fn adjust_slot_for_commitment(slot: Slot, commitment: &CommitmentConfig) -> Slot {
+    match commitment.commitment {
+        CommitmentLevel::Processed => slot,
+        CommitmentLevel::Confirmed => slot.saturating_sub(1),
+        CommitmentLevel::Finalized => slot.saturating_sub(FINALIZATION_SLOT_THRESHOLD),
+    }
+}
+
 enum ProcessTransactionResult {
     Success(TransactionMetadata),
     SimulationFailure(FailedTransactionMetadata),
@@ -111,6 +123,11 @@ impl<T> SvmAccessContext<T> {
             latest_epoch_info: self.latest_epoch_info.clone(),
             inner,
         }
+    }
+
+    /// Returns the slot adjusted for the given commitment level.
+    pub fn slot_for_commitment(&self, commitment: &CommitmentConfig) -> Slot {
+        adjust_slot_for_commitment(self.slot, commitment)
     }
 }
 
@@ -2885,11 +2902,7 @@ impl SurfnetSvmLocker {
     pub fn get_slot_for_commitment(&self, commitment: &CommitmentConfig) -> Slot {
         self.with_svm_reader(|svm_reader| {
             let slot = svm_reader.get_latest_absolute_slot();
-            match commitment.commitment {
-                CommitmentLevel::Processed => slot,
-                CommitmentLevel::Confirmed => slot.saturating_sub(1),
-                CommitmentLevel::Finalized => slot.saturating_sub(FINALIZATION_SLOT_THRESHOLD),
-            }
+            adjust_slot_for_commitment(slot, commitment)
         })
     }
 

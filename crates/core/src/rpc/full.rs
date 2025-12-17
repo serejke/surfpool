@@ -1645,10 +1645,11 @@ impl Full for SurfpoolFullRpc {
         let (_, mut unsanitized_tx) =
             decode_and_deserialize::<VersionedTransaction>(data, binary_encoding).unwrap();
 
+        let commitment = config.commitment.unwrap_or_default();
         let SurfnetRpcContext {
             svm_locker,
             remote_ctx,
-        } = match meta.get_rpc_context(CommitmentConfig::confirmed()) {
+        } = match meta.get_rpc_context(commitment) {
             Ok(res) => res,
             Err(e) => return e.into(),
         };
@@ -1662,14 +1663,16 @@ impl Full for SurfpoolFullRpc {
                 loaded_addresses.as_ref().map(|l| l.all_loaded_addresses()),
             );
 
+            let ctx = svm_locker
+                .get_multiple_accounts(&remote_ctx, &transaction_pubkeys, None)
+                .await?;
+            let slot = ctx.slot_for_commitment(&commitment);
             let SvmAccessContext {
-                slot,
                 inner: account_updates,
                 latest_blockhash,
                 latest_epoch_info,
-            } = svm_locker
-                .get_multiple_accounts(&remote_ctx, &transaction_pubkeys, None)
-                .await?;
+                ..
+            } = ctx;
 
             svm_locker.write_multiple_account_updates(&account_updates);
 
@@ -2602,13 +2605,11 @@ mod tests {
 
         // Verify context slot is captured at the beginning of the call
         assert_eq!(
-            res.context.slot,
-            expected_slot,
+            res.context.slot, expected_slot,
             "Context slot should be captured at the beginning of the call, not after lookups"
         );
         assert_ne!(
-            res.context.slot,
-            0,
+            res.context.slot, 0,
             "Context slot should never be 0 when the SVM has advanced"
         );
 
@@ -3230,7 +3231,8 @@ mod tests {
                 .unwrap();
 
             let current_block_height = setup.context.svm_locker.get_epoch_info().block_height;
-            let expected_last_valid_block_height = current_block_height + MAX_RECENT_BLOCKHASHES as u64;
+            let expected_last_valid_block_height =
+                current_block_height + MAX_RECENT_BLOCKHASHES as u64;
 
             assert_eq!(
                 res.value.blockhash,
@@ -3263,7 +3265,8 @@ mod tests {
                 .unwrap();
 
             let current_block_height = setup.context.svm_locker.get_epoch_info().block_height;
-            let expected_last_valid_block_height = current_block_height + MAX_RECENT_BLOCKHASHES as u64;
+            let expected_last_valid_block_height =
+                current_block_height + MAX_RECENT_BLOCKHASHES as u64;
 
             assert_eq!(
                 res.value.blockhash,
@@ -3296,7 +3299,8 @@ mod tests {
                 .unwrap();
 
             let current_block_height = setup.context.svm_locker.get_epoch_info().block_height;
-            let expected_last_valid_block_height = current_block_height + MAX_RECENT_BLOCKHASHES as u64;
+            let expected_last_valid_block_height =
+                current_block_height + MAX_RECENT_BLOCKHASHES as u64;
 
             assert_eq!(
                 res.value.blockhash,

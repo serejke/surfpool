@@ -2,8 +2,7 @@ use std::str::FromStr;
 
 use jsonrpc_core::{Error, Result};
 use jsonrpc_derive::rpc;
-use solana_client::rpc_config::RpcSendTransactionConfig;
-use solana_client::rpc_custom_error::RpcCustomError;
+use solana_client::{rpc_config::RpcSendTransactionConfig, rpc_custom_error::RpcCustomError};
 use solana_signature::Signature;
 
 use super::{
