@@ -77,7 +77,7 @@ juniper_codegen = { version = "0.16.0", default-features = false }
 juniper_graphql_ws = { version = "0.4.0", default-features = false }
 lazy_static = "1.5.0"
 libloading = "0.7.4"
-litesvm = { git = "https://github.com/txtx/litesvm.git", branch = "fix/relax-deps", features = [
+litesvm = { git = "https://github.com/serejke/litesvm.git", branch = "fix/relax-deps-with-priority-fee", features = [
     "nodejs-internal",
 ] }
 log = "0.4.27"
