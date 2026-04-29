@@ -1576,11 +1576,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
                 (None, minimum_rent)
             };
 
-            let SvmAccessContext {
-                slot,
-                inner: mut token_account,
-                ..
-            } = svm_locker
+            let ctx = svm_locker
                 .get_account(
                     &remote_ctx,
                     &associated_token_account,
@@ -1602,6 +1598,8 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
                     })),
                 )
                 .await?;
+            let slot = ctx.slot_for_commitment(&CommitmentConfig::confirmed());
+            let mut token_account = ctx.inner;
 
             let mut token_account_data = TokenAccount::unpack(token_account.expected_data())
                 .map_err(|e| {
@@ -1660,9 +1658,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
         };
 
         Box::pin(async move {
-            let SvmAccessContext { slot, .. } = svm_locker
+            let ctx = svm_locker
                 .clone_program_account(&remote_ctx, &source_program_id, &destination_program_id)
                 .await?;
+            let slot = ctx.slot_for_commitment(&CommitmentConfig::confirmed());
 
             Ok(RpcResponse {
                 context: RpcResponseContext::new(slot),
@@ -1690,11 +1689,11 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
                 remote_ctx,
             } = meta.get_rpc_context(CommitmentConfig::confirmed())?;
 
-            let SvmAccessContext {
-                slot, inner: uuid, ..
-            } = svm_locker
+            let ctx = svm_locker
                 .profile_transaction(&remote_ctx, transaction, tag.clone())
                 .await?;
+            let slot = ctx.slot_for_commitment(&CommitmentConfig::confirmed());
+            let uuid = ctx.inner;
 
             let key = UuidOrSignature::Uuid(uuid);
 
@@ -1719,7 +1718,7 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
         let config = config.unwrap_or_default();
         let svm_locker = meta.get_svm_locker()?;
         let profiles = svm_locker.get_profile_results_by_tag(tag, &config)?;
-        let slot = svm_locker.get_latest_absolute_slot();
+        let slot = svm_locker.get_slot_for_commitment(&CommitmentConfig::confirmed());
         Ok(RpcResponse {
             context: RpcResponseContext::new(slot),
             value: profiles,
@@ -1799,9 +1798,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             Err(e) => return e.into(),
         };
         Box::pin(async move {
-            let SvmAccessContext { slot, .. } = svm_locker
+            let ctx = svm_locker
                 .set_program_authority(&remote_ctx, program_id, new_authority)
                 .await?;
+            let slot = ctx.slot_for_commitment(&CommitmentConfig::confirmed());
 
             Ok(RpcResponse {
                 context: RpcResponseContext::new(slot),
@@ -1861,9 +1861,10 @@ impl SurfnetCheatcodes for SurfnetCheatcodesRpc {
             Err(e) => return Err(e.into()),
         };
         let idl = svm_locker.get_idl(&program_id, slot);
-        let slot = slot.unwrap_or_else(|| svm_locker.get_latest_absolute_slot());
+        let context_slot = slot
+            .unwrap_or_else(|| svm_locker.get_slot_for_commitment(&CommitmentConfig::confirmed()));
         Ok(RpcResponse {
-            context: RpcResponseContext::new(slot),
+            context: RpcResponseContext::new(context_slot),
             value: idl,
         })
     }

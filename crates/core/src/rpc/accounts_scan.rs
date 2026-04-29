@@ -17,7 +17,7 @@ use solana_commitment_config::CommitmentConfig;
 use solana_rpc_client_api::response::Response as RpcResponse;
 
 use super::{RunloopContext, State, SurfnetRpcContext, utils::verify_pubkey};
-use crate::surfnet::locker::SvmAccessContext;
+use crate::surfnet::locker::adjust_slot_for_commitment;
 
 #[rpc]
 pub trait AccountsScan {
@@ -526,24 +526,22 @@ impl AccountsScan for SurfpoolAccountsScanRpc {
         config: Option<RpcLargestAccountsConfig>,
     ) -> BoxFuture<Result<RpcResponse<Vec<RpcAccountBalance>>>> {
         let config = config.unwrap_or_default();
+        let commitment = config.commitment.unwrap_or_default();
         let SurfnetRpcContext {
             svm_locker,
             remote_ctx,
-        } = match meta.get_rpc_context(config.commitment.unwrap_or_default()) {
+        } = match meta.get_rpc_context(commitment) {
             Ok(res) => res,
             Err(e) => return e.into(),
         };
 
         Box::pin(async move {
-            let SvmAccessContext {
-                slot,
-                inner: largest_accounts,
-                ..
-            } = svm_locker.get_largest_accounts(&remote_ctx, config).await?;
+            let ctx = svm_locker.get_largest_accounts(&remote_ctx, config).await?;
+            let slot = ctx.slot_for_commitment(&commitment);
 
             Ok(RpcResponse {
                 context: RpcResponseContext::new(slot),
-                value: largest_accounts,
+                value: ctx.inner,
             })
         })
     }
@@ -558,9 +556,15 @@ impl AccountsScan for SurfpoolAccountsScanRpc {
             Err(e) => return e.into(),
         };
 
+        let commitment = config
+            .as_ref()
+            .and_then(|c| c.commitment)
+            .unwrap_or_default();
+
         Box::pin(async move {
             svm_locker.with_svm_reader(|svm_reader| {
-                let slot = svm_reader.get_latest_absolute_slot();
+                let absolute_slot = svm_reader.get_latest_absolute_slot();
+                let slot = adjust_slot_for_commitment(absolute_slot, &commitment);
 
                 // Check if we should exclude non-circulating accounts list
                 let exclude_accounts = config
@@ -596,26 +600,24 @@ impl AccountsScan for SurfpoolAccountsScanRpc {
             Err(e) => return e.into(),
         };
 
+        let commitment_config = commitment.unwrap_or_default();
         let SurfnetRpcContext {
             svm_locker,
             remote_ctx,
-        } = match meta.get_rpc_context(commitment.unwrap_or_default()) {
+        } = match meta.get_rpc_context(commitment_config) {
             Ok(res) => res,
             Err(e) => return e.into(),
         };
 
         Box::pin(async move {
-            let SvmAccessContext {
-                slot,
-                inner: largest_accounts,
-                ..
-            } = svm_locker
+            let ctx = svm_locker
                 .get_token_largest_accounts(&remote_ctx, &mint)
                 .await?;
+            let slot = ctx.slot_for_commitment(&commitment_config);
 
             Ok(RpcResponse {
                 context: RpcResponseContext::new(slot),
-                value: largest_accounts,
+                value: ctx.inner,
             })
         })
     }
@@ -628,6 +630,7 @@ impl AccountsScan for SurfpoolAccountsScanRpc {
         config: Option<RpcAccountInfoConfig>,
     ) -> BoxFuture<Result<RpcResponse<Vec<RpcKeyedAccount>>>> {
         let config = config.unwrap_or_default();
+        let commitment = config.commitment.unwrap_or_default();
         let owner = match verify_pubkey(&owner_str) {
             Ok(res) => res,
             Err(e) => return e.into(),
@@ -659,11 +662,7 @@ impl AccountsScan for SurfpoolAccountsScanRpc {
         };
 
         Box::pin(async move {
-            let SvmAccessContext {
-                slot,
-                inner: token_accounts,
-                ..
-            } = svm_locker
+            let ctx = svm_locker
                 .get_token_accounts_by_owner(
                     &remote_ctx.map(|(client, _)| client),
                     owner,
@@ -671,10 +670,11 @@ impl AccountsScan for SurfpoolAccountsScanRpc {
                     &config,
                 )
                 .await?;
+            let slot = ctx.slot_for_commitment(&commitment);
 
             Ok(RpcResponse {
                 context: RpcResponseContext::new(slot),
-                value: token_accounts,
+                value: ctx.inner,
             })
         })
     }
@@ -687,6 +687,7 @@ impl AccountsScan for SurfpoolAccountsScanRpc {
         config: Option<RpcAccountInfoConfig>,
     ) -> BoxFuture<Result<RpcResponse<Vec<RpcKeyedAccount>>>> {
         let config = config.unwrap_or_default();
+        let commitment = config.commitment.unwrap_or_default();
         let delegate = match verify_pubkey(&delegate_str) {
             Ok(res) => res,
             Err(e) => return e.into(),
@@ -695,7 +696,7 @@ impl AccountsScan for SurfpoolAccountsScanRpc {
         let SurfnetRpcContext {
             svm_locker,
             remote_ctx,
-        } = match meta.get_rpc_context(config.commitment.unwrap_or_default()) {
+        } = match meta.get_rpc_context(commitment) {
             Ok(res) => res,
             Err(e) => return e.into(),
         };
@@ -711,17 +712,14 @@ impl AccountsScan for SurfpoolAccountsScanRpc {
             };
 
             let remote_ctx = remote_ctx.map(|(r, _)| r);
-            let SvmAccessContext {
-                slot,
-                inner: keyed_accounts,
-                ..
-            } = svm_locker
+            let ctx = svm_locker
                 .get_token_accounts_by_delegate(&remote_ctx, delegate, &filter, &config)
                 .await?;
+            let slot = ctx.slot_for_commitment(&commitment);
 
             Ok(RpcResponse {
                 context: RpcResponseContext::new(slot),
-                value: keyed_accounts,
+                value: ctx.inner,
             })
         })
     }
