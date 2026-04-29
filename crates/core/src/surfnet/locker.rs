@@ -77,6 +77,22 @@ use crate::{
     },
 };
 
+/// Adjusts an absolute slot for the requested commitment level so it can be
+/// returned in `RpcResponseContext::new(slot)`.
+///
+/// `minContextSlot` validation across the codebase is done against
+/// commitment-adjusted slots (see `get_slot_for_commitment`). When responses
+/// returned an unadjusted absolute slot, a client chaining
+/// `getAccountInfo(confirmed)` → `…(confirmed, minContextSlot=ctx.slot)`
+/// would hit `MinContextSlotNotReached` because `(slot - 1) < slot`.
+pub fn adjust_slot_for_commitment(slot: Slot, commitment: &CommitmentConfig) -> Slot {
+    match commitment.commitment {
+        CommitmentLevel::Processed => slot,
+        CommitmentLevel::Confirmed => slot.saturating_sub(1),
+        CommitmentLevel::Finalized => slot.saturating_sub(FINALIZATION_SLOT_THRESHOLD),
+    }
+}
+
 enum ProcessTransactionResult {
     Success(TransactionMetadata),
     SimulationFailure(FailedTransactionMetadata),
@@ -111,6 +127,13 @@ impl<T> SvmAccessContext<T> {
             latest_epoch_info: self.latest_epoch_info,
             inner,
         }
+    }
+
+    /// Returns `self.slot` adjusted for the given commitment level. Use this
+    /// when populating `RpcResponseContext::new(...)` so that the returned
+    /// slot is consistent with how `minContextSlot` is validated elsewhere.
+    pub fn slot_for_commitment(&self, commitment: &CommitmentConfig) -> Slot {
+        adjust_slot_for_commitment(self.slot, commitment)
     }
 }
 
@@ -3401,12 +3424,7 @@ impl SurfnetSvmLocker {
 
     pub fn get_slot_for_commitment(&self, commitment: &CommitmentConfig) -> Slot {
         self.with_svm_reader(|svm_reader| {
-            let slot = svm_reader.get_latest_absolute_slot();
-            match commitment.commitment {
-                CommitmentLevel::Processed => slot,
-                CommitmentLevel::Confirmed => slot.saturating_sub(1),
-                CommitmentLevel::Finalized => slot.saturating_sub(FINALIZATION_SLOT_THRESHOLD),
-            }
+            adjust_slot_for_commitment(svm_reader.get_latest_absolute_slot(), commitment)
         })
     }
 

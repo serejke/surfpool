@@ -1699,10 +1699,11 @@ impl Full for SurfpoolFullRpc {
             Err(e) => return Box::pin(async move { Err(e) }),
         };
 
+        let commitment = config.commitment.unwrap_or_default();
         let SurfnetRpcContext {
             svm_locker,
             remote_ctx,
-        } = match meta.get_rpc_context(CommitmentConfig::confirmed()) {
+        } = match meta.get_rpc_context(commitment) {
             Ok(res) => res,
             Err(e) => return e.into(),
         };
@@ -1716,14 +1717,16 @@ impl Full for SurfpoolFullRpc {
                 loaded_addresses.as_ref().map(|l| l.all_loaded_addresses()),
             );
 
+            let ctx = svm_locker
+                .get_multiple_accounts(&remote_ctx, &transaction_pubkeys, None)
+                .await?;
+            let slot = ctx.slot_for_commitment(&commitment);
             let SvmAccessContext {
-                slot,
                 inner: account_updates,
                 latest_blockhash,
                 latest_epoch_info,
-            } = svm_locker
-                .get_multiple_accounts(&remote_ctx, &transaction_pubkeys, None)
-                .await?;
+                ..
+            } = ctx;
 
             let mut seen_accounts = std::collections::HashSet::new();
             let mut loaded_accounts_data_size: u64 = 0;
