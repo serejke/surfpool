@@ -18,7 +18,7 @@ use super::{RunloopContext, SurfnetRpcContext};
 use crate::{
     error::{SurfpoolError, SurfpoolResult},
     rpc::{State, utils::verify_pubkey},
-    surfnet::locker::{SvmAccessContext, is_supported_token_program},
+    surfnet::locker::is_supported_token_program,
     types::{MintAccount, TokenAccount},
 };
 
@@ -364,20 +364,19 @@ impl AccountsData for SurfpoolAccountsDataRpc {
         #[cfg(feature = "prometheus")]
         let rpc_start = std::time::Instant::now();
 
+        let commitment = config.commitment.unwrap_or_default();
         let SurfnetRpcContext {
             svm_locker,
             remote_ctx,
-        } = match meta.get_rpc_context(config.commitment.unwrap_or_default()) {
+        } = match meta.get_rpc_context(commitment) {
             Ok(res) => res,
             Err(e) => return e.into(),
         };
 
         Box::pin(async move {
-            let SvmAccessContext {
-                slot,
-                inner: account_update,
-                ..
-            } = svm_locker.get_account(&remote_ctx, &pubkey, None).await?;
+            let ctx = svm_locker.get_account(&remote_ctx, &pubkey, None).await?;
+            let slot = ctx.slot_for_commitment(&commitment);
+            let account_update = ctx.inner;
 
             #[cfg(feature = "prometheus")]
             if let Some(m) = crate::telemetry::metrics() {
@@ -425,10 +424,11 @@ impl AccountsData for SurfpoolAccountsDataRpc {
             Err(e) => return e.into(),
         };
 
+        let commitment = config.commitment.unwrap_or_default();
         let SurfnetRpcContext {
             svm_locker,
             remote_ctx,
-        } = match meta.get_rpc_context(config.commitment.unwrap_or_default()) {
+        } = match meta.get_rpc_context(commitment) {
             Ok(res) => res,
             Err(e) => return e.into(),
         };
@@ -437,13 +437,11 @@ impl AccountsData for SurfpoolAccountsDataRpc {
         let rpc_start = std::time::Instant::now();
 
         Box::pin(async move {
-            let SvmAccessContext {
-                slot,
-                inner: account_updates,
-                ..
-            } = svm_locker
+            let ctx = svm_locker
                 .get_multiple_accounts(&remote_ctx, &pubkeys, None)
                 .await?;
+            let slot = ctx.slot_for_commitment(&commitment);
+            let account_updates = ctx.inner;
 
             #[cfg(feature = "prometheus")]
             if let Some(m) = crate::telemetry::metrics() {
@@ -530,10 +528,11 @@ impl AccountsData for SurfpoolAccountsDataRpc {
             Err(e) => return e.into(),
         };
 
+        let commitment_config = commitment.unwrap_or_default();
         let SurfnetRpcContext {
             svm_locker,
             remote_ctx,
-        } = match meta.get_rpc_context(commitment.unwrap_or_default()) {
+        } = match meta.get_rpc_context(commitment_config) {
             Ok(res) => res,
             Err(e) => return e.into(),
         };
@@ -563,13 +562,11 @@ impl AccountsData for SurfpoolAccountsDataRpc {
                 .into());
             };
 
-            let SvmAccessContext {
-                slot,
-                inner: mint_account_result,
-                ..
-            } = svm_locker
+            let ctx = svm_locker
                 .get_account(&remote_ctx, &mint_pubkey, None)
                 .await?;
+            let slot = ctx.slot_for_commitment(&commitment_config);
+            let mint_account_result = ctx.inner;
 
             svm_locker.write_account_update(mint_account_result.clone());
 
@@ -618,22 +615,21 @@ impl AccountsData for SurfpoolAccountsDataRpc {
             Err(e) => return e.into(),
         };
 
+        let commitment_config = commitment.unwrap_or_default();
         let SurfnetRpcContext {
             svm_locker,
             remote_ctx,
-        } = match meta.get_rpc_context(commitment.unwrap_or_default()) {
+        } = match meta.get_rpc_context(commitment_config) {
             Ok(res) => res,
             Err(e) => return e.into(),
         };
 
         Box::pin(async move {
-            let SvmAccessContext {
-                slot,
-                inner: mint_account_result,
-                ..
-            } = svm_locker
+            let ctx = svm_locker
                 .get_account(&remote_ctx, &mint_pubkey, None)
                 .await?;
+            let slot = ctx.slot_for_commitment(&commitment_config);
+            let mint_account_result = ctx.inner;
 
             svm_locker.write_account_update(mint_account_result.clone());
 
@@ -1612,5 +1608,70 @@ mod tests {
         );
 
         println!("✅ Account order preserved with remote: [1M lamports, None, 3M lamports]");
+    }
+
+    /// Pin the SVM's `absolute_slot` so commitment-adjusted slots are deterministic
+    /// (Processed = absolute, Confirmed = absolute - 1, Finalized = absolute - 31).
+    fn set_absolute_slot(setup: &TestSetup<SurfpoolAccountsDataRpc>, slot: u64) {
+        setup.context.svm_locker.with_svm_writer(|svm_writer| {
+            svm_writer.latest_epoch_info.absolute_slot = slot;
+        });
+    }
+
+    /// Regression test: `getAccountInfo`'s response `context.slot` must reflect the
+    /// commitment level requested, otherwise chaining a follow-up call with
+    /// `minContextSlot = ctx.slot` against an RPC that validates with
+    /// commitment-adjusted slots (e.g. `getLatestBlockhash`) fails with
+    /// `MinContextSlotNotReached`.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_get_account_info_context_slot_per_commitment() {
+        use solana_commitment_config::CommitmentLevel;
+
+        let setup = TestSetup::new(SurfpoolAccountsDataRpc);
+        set_absolute_slot(&setup, 100);
+
+        let pubkey = Pubkey::new_unique().to_string();
+
+        let request = |level: CommitmentLevel| {
+            setup.rpc.get_account_info(
+                Some(setup.context.clone()),
+                pubkey.clone(),
+                Some(RpcAccountInfoConfig {
+                    commitment: Some(CommitmentConfig { commitment: level }),
+                    ..Default::default()
+                }),
+            )
+        };
+
+        assert_eq!(request(CommitmentLevel::Processed).await.unwrap().context.slot, 100);
+        assert_eq!(request(CommitmentLevel::Confirmed).await.unwrap().context.slot, 99);
+        assert_eq!(request(CommitmentLevel::Finalized).await.unwrap().context.slot, 69);
+    }
+
+    /// Same regression check for `getMultipleAccounts` — both share the
+    /// `SvmAccessContext.slot` flow but enter different code paths.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_get_multiple_accounts_context_slot_per_commitment() {
+        use solana_commitment_config::CommitmentLevel;
+
+        let setup = TestSetup::new(SurfpoolAccountsDataRpc);
+        set_absolute_slot(&setup, 100);
+
+        let pubkeys = vec![Pubkey::new_unique().to_string()];
+
+        let request = |level: CommitmentLevel| {
+            setup.rpc.get_multiple_accounts(
+                Some(setup.context.clone()),
+                pubkeys.clone(),
+                Some(RpcAccountInfoConfig {
+                    commitment: Some(CommitmentConfig { commitment: level }),
+                    ..Default::default()
+                }),
+            )
+        };
+
+        assert_eq!(request(CommitmentLevel::Processed).await.unwrap().context.slot, 100);
+        assert_eq!(request(CommitmentLevel::Confirmed).await.unwrap().context.slot, 99);
+        assert_eq!(request(CommitmentLevel::Finalized).await.unwrap().context.slot, 69);
     }
 }

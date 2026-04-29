@@ -20,7 +20,7 @@ use super::{RunloopContext, SurfnetRpcContext};
 use crate::{
     SURFPOOL_IDENTITY_PUBKEY,
     rpc::{State, utils::verify_pubkey},
-    surfnet::{FINALIZATION_SLOT_THRESHOLD, GetAccountResult, locker::SvmAccessContext},
+    surfnet::{FINALIZATION_SLOT_THRESHOLD, GetAccountResult},
 };
 
 const SURFPOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -609,11 +609,9 @@ impl Minimal for SurfpoolMinimalRpc {
             #[cfg(feature = "prometheus")]
             let rpc_start = std::time::Instant::now();
 
-            let SvmAccessContext {
-                slot,
-                inner: account_update,
-                ..
-            } = svm_locker.get_account(&remote_ctx, &pubkey, None).await?;
+            let ctx = svm_locker.get_account(&remote_ctx, &pubkey, None).await?;
+            let slot = ctx.slot_for_commitment(&commitment_config);
+            let account_update = ctx.inner;
 
             if let Some(min_slot) = min_ctx_slot
                 && slot < min_slot
@@ -1366,5 +1364,49 @@ mod tests {
 
         // should be invalid params error
         assert_eq!(error.code, jsonrpc_core::ErrorCode::InvalidParams);
+    }
+
+    /// `getBalance` must return a `context.slot` adjusted for the requested
+    /// commitment level so that chaining the same call with
+    /// `minContextSlot = previous_ctx.slot` does not falsely trip
+    /// `MinContextSlotNotReached`.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_get_balance_context_slot_per_commitment_and_chain() {
+        let setup = TestSetup::new(SurfpoolMinimalRpc);
+        setup.context.svm_locker.with_svm_writer(|svm_writer| {
+            svm_writer.latest_epoch_info.absolute_slot = 100;
+        });
+
+        let pubkey = Pubkey::new_unique().to_string();
+
+        let request = |level: CommitmentLevel, min_context_slot: Option<Slot>| {
+            setup.rpc.get_balance(
+                Some(setup.context.clone()),
+                pubkey.clone(),
+                Some(RpcContextConfig {
+                    commitment: Some(CommitmentConfig { commitment: level }),
+                    min_context_slot,
+                }),
+            )
+        };
+
+        // Per-commitment context slot.
+        let processed = request(CommitmentLevel::Processed, None).await.unwrap();
+        let confirmed = request(CommitmentLevel::Confirmed, None).await.unwrap();
+        let finalized = request(CommitmentLevel::Finalized, None).await.unwrap();
+        assert_eq!(processed.context.slot, 100);
+        assert_eq!(confirmed.context.slot, 99);
+        assert_eq!(finalized.context.slot, 69);
+
+        // Regression: feeding a previous response's slot back as
+        // `minContextSlot` for the SAME commitment must succeed. Before the
+        // fix this returned absolute=100 for confirmed and then rejected
+        // (99 < 100) on the follow-up call.
+        request(CommitmentLevel::Confirmed, Some(confirmed.context.slot))
+            .await
+            .expect("chained confirmed→confirmed minContextSlot must not error");
+        request(CommitmentLevel::Finalized, Some(finalized.context.slot))
+            .await
+            .expect("chained finalized→finalized minContextSlot must not error");
     }
 }
