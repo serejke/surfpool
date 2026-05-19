@@ -104,7 +104,9 @@ where
 pub enum StorageError {
     #[error("Sqlite storage is not enabled in this build")]
     SqliteNotEnabled,
-    #[error("Postgres storage is not enabled in this build")]
+    #[error(
+        "Postgres storage is not enabled in this build. To use PostgreSQL, build surfpool from source with the `postgres` feature flag."
+    )]
     PostgresNotEnabled,
     #[error("Invalid Postgres database URL: {0}")]
     InvalidPostgresUrl(String),
