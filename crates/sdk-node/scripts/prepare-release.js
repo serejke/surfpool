@@ -108,7 +108,32 @@ function main() {
     cwd: packageDir,
   });
 
+  // `npm install` drops lockfile entries for optionalDependencies whose target
+  // version isn't published yet (the platform packages are published from this
+  // same release). Without these stub entries `npm ci` errors with
+  // "Missing: <pkg> from lock file". Re-add them so CI install stays in sync.
+  ensureOptionalStubs(path.join(packageDir, "package-lock.json"));
+
   console.log(`Prepared @solana/surfpool npm release ${version}`);
+}
+
+function ensureOptionalStubs(lockfilePath) {
+  const lockfile = readJson(lockfilePath);
+  const packages = lockfile.packages || {};
+  let changed = false;
+
+  for (const packageName of PLATFORM_PACKAGES) {
+    const key = `node_modules/${packageName}`;
+    if (!Object.hasOwn(packages, key)) {
+      packages[key] = { optional: true };
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    lockfile.packages = packages;
+    writeJson(lockfilePath, lockfile);
+  }
 }
 
 main();
