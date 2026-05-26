@@ -41,13 +41,36 @@ pub async fn start_local_surfnet(
     simnet_commands_rx: Receiver<SimnetCommand>,
     geyser_events_rx: Receiver<GeyserEvent>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    start_local_surfnet_with_extensions(
+        surfnet_svm,
+        config,
+        simnet_commands_tx,
+        simnet_commands_rx,
+        geyser_events_rx,
+        Vec::new(),
+    )
+    .await
+}
+
+/// Variant of [`start_local_surfnet`] that accepts additional RPC extensions
+/// (e.g. surfpool-jupiter wired up by the CLI). Each registrar is invoked
+/// once against the freshly built HTTP RPC IO handler, in the order provided.
+pub async fn start_local_surfnet_with_extensions(
+    surfnet_svm: SurfnetSvm,
+    config: SurfpoolConfig,
+    simnet_commands_tx: Sender<SimnetCommand>,
+    simnet_commands_rx: Receiver<SimnetCommand>,
+    geyser_events_rx: Receiver<GeyserEvent>,
+    extensions: Vec<runloops::RpcExtensionRegistrar>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let svm_locker = SurfnetSvmLocker::new(surfnet_svm);
-    runloops::start_local_surfnet_runloop(
+    runloops::start_local_surfnet_runloop_with_extensions(
         svm_locker,
         config,
         simnet_commands_tx,
         simnet_commands_rx,
         geyser_events_rx,
+        extensions,
     )
     .await
 }

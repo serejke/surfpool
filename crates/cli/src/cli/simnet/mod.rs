@@ -19,7 +19,9 @@ use notify::{
 use serde::{Deserialize, Serialize};
 use solana_keypair::Keypair;
 use solana_signer::Signer;
-use surfpool_core::{start_local_surfnet, surfnet::svm::SurfnetSvm};
+use surfpool_core::{
+    runloops::RpcExtensionRegistrar, start_local_surfnet_with_extensions, surfnet::svm::SurfnetSvm,
+};
 use surfpool_types::{SanitizedConfig, SimnetCommand, SimnetEvent, SubgraphEvent};
 use txtx_core::{
     kit::{
@@ -212,15 +214,30 @@ pub async fn handle_start_local_surfnet_command(
     let simnet_commands_tx_copy = simnet_commands_tx.clone();
     let config_copy = config.clone();
 
+    // Build the RPC extension registrars from configured opt-in features.
+    let mut extensions: Vec<RpcExtensionRegistrar> = Vec::new();
+    let jupiter_config = cmd.jupiter_config();
+    if jupiter_config.enabled {
+        let jupiter_base_url = jupiter_config.base_url.clone();
+        extensions.push(Box::new(move |io| {
+            surfpool_jupiter::register_extension(io, jupiter_config);
+        }));
+        let _ = simnet_events_tx.send(SimnetEvent::info(format!(
+            "Jupiter extension enabled: jupiter_quote/jupiter_swap proxied to {}",
+            jupiter_base_url
+        )));
+    }
+
     let simnet_events_tx_for_thread = simnet_events_tx.clone();
     let simnet_handle = hiro_system_kit::thread_named("simnet")
         .spawn(move || {
-            let future = start_local_surfnet(
+            let future = start_local_surfnet_with_extensions(
                 surfnet_svm,
                 config_copy,
                 simnet_commands_tx_copy,
                 simnet_commands_rx,
                 geyser_events_rx,
+                extensions,
             );
             if let Err(e) = hiro_system_kit::nestable_block_on(future) {
                 // Send the error through the event channel so the main thread can handle it

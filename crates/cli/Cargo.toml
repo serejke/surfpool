@@ -61,6 +61,7 @@ toml = { workspace = true, optional = true }
 url = { workspace = true }
 
 surfpool-core = { workspace = true }
+surfpool-jupiter = { workspace = true }
 surfpool-mcp = { workspace = true }
 rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
 rmcp-actix-web = { workspace = true }

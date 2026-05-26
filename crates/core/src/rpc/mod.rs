@@ -60,7 +60,7 @@ pub struct SurfnetRpcContext<T> {
     pub remote_ctx: Option<(SurfnetRemoteClient, T)>,
 }
 
-trait State {
+pub trait State {
     fn get_svm_locker(&self) -> SurfpoolResult<SurfnetSvmLocker>;
     fn with_svm_reader<T, F>(&self, reader: F) -> Result<T, SurfpoolError>
     where
