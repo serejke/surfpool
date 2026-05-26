@@ -14,6 +14,7 @@ members = [
     "crates/cli",
     "crates/core",
     "crates/db",
+    "crates/jupiter",
     "crates/mcp",
     "crates/sdk",
     "crates/sdk-node",
@@ -162,6 +163,7 @@ zip = { version = "0.6", features = ["deflate"], default-features = false }
 sha2 = { version = "0.10" }
 
 surfpool-core = { path = "crates/core", default-features = false, version = "1.3.0"}
+surfpool-jupiter = { path = "crates/jupiter", default-features = false, version = "1.3.0" }
 surfpool-sdk = { path = "crates/sdk", default-features = false, version = "1.3.0" }
 surfpool-db = { path = "crates/db", version = "1.3.0" }
 surfpool-mcp = { path = "crates/mcp", default-features = false, version = "1.3.0" }

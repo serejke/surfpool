@@ -11414,6 +11414,7 @@ dependencies = [
  "solana-system-interface 3.2.0",
  "solana-transaction",
  "surfpool-core",
+ "surfpool-jupiter",
  "surfpool-mcp",
  "surfpool-studio-ui",
  "surfpool-types",
@@ -11543,6 +11544,35 @@ dependencies = [
  "openssl-sys",
  "pq-sys",
  "txtx-addon-kit",
+]
+
+[[package]]
+name = "surfpool-jupiter"
+version = "1.3.0"
+dependencies = [
+ "base64 0.22.1",
+ "bincode",
+ "jsonrpc-core",
+ "jsonrpc-core-client",
+ "jsonrpc-derive",
+ "log 0.4.29",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "solana-clock 3.0.0",
+ "solana-commitment-config",
+ "solana-hash 3.1.0",
+ "solana-message 3.1.0",
+ "solana-program-pack 3.0.0",
+ "solana-pubkey 3.0.0",
+ "solana-rpc-client-api",
+ "solana-signature",
+ "solana-transaction",
+ "spl-token-2022-interface",
+ "spl-token-interface",
+ "surfpool-core",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

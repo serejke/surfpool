@@ -1,0 +1,39 @@
+[package]
+name = "surfpool-jupiter"
+description = "Opt-in Jupiter aggregator proxy for surfpool — local-fork-friendly /quote, /swap, and account-refresh helpers."
+version = { workspace = true }
+edition = { workspace = true }
+readme = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+keywords = { workspace = true }
+categories = { workspace = true }
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+base64 = { workspace = true }
+bincode = { workspace = true }
+jsonrpc-core = { workspace = true }
+jsonrpc-core-client = { workspace = true }
+jsonrpc-derive = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true, features = ["rustls-tls", "json"] }
+serde = { workspace = true }
+serde_derive = { workspace = true }
+serde_json = { workspace = true }
+solana-clock = { workspace = true }
+solana-commitment-config = { workspace = true }
+solana-hash = { workspace = true }
+solana-message = { workspace = true }
+solana-program-pack = { workspace = true }
+solana-pubkey = { workspace = true }
+solana-rpc-client-api = { workspace = true }
+solana-signature = { workspace = true }
+solana-transaction = { workspace = true }
+spl-token-interface = { workspace = true }
+spl-token-2022-interface = { workspace = true }
+thiserror = { workspace = true }
+
+surfpool-core = { workspace = true }
