@@ -150,12 +150,41 @@ fn check_port_availability(addr: SocketAddr, server_type: &str) -> Result<(), St
     }
 }
 
+/// Boxed closure that extends the HTTP RPC IO handler with additional
+/// JSON-RPC methods. Used by surfpool-cli (and integrators) to wire opt-in
+/// extensions like `surfpool-jupiter` without `surfpool-core` having to
+/// depend on them.
+pub type RpcExtensionRegistrar =
+    Box<dyn FnOnce(&mut MetaIoHandler<Option<RunloopContext>, SurfpoolMiddleware>) + Send>;
+
 pub async fn start_local_surfnet_runloop(
     svm_locker: SurfnetSvmLocker,
     config: SurfpoolConfig,
     simnet_commands_tx: Sender<SimnetCommand>,
     simnet_commands_rx: Receiver<SimnetCommand>,
     geyser_events_rx: Receiver<GeyserEvent>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    start_local_surfnet_runloop_with_extensions(
+        svm_locker,
+        config,
+        simnet_commands_tx,
+        simnet_commands_rx,
+        geyser_events_rx,
+        Vec::new(),
+    )
+    .await
+}
+
+/// Variant of [`start_local_surfnet_runloop`] that accepts additional RPC
+/// extensions. Each registrar is invoked once against the freshly built HTTP
+/// IO handler, in the order provided.
+pub async fn start_local_surfnet_runloop_with_extensions(
+    svm_locker: SurfnetSvmLocker,
+    config: SurfpoolConfig,
+    simnet_commands_tx: Sender<SimnetCommand>,
+    simnet_commands_rx: Receiver<SimnetCommand>,
+    geyser_events_rx: Receiver<GeyserEvent>,
+    extensions: Vec<RpcExtensionRegistrar>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(simnet) = config.simnets.first() else {
         return Ok(());
@@ -224,6 +253,7 @@ pub async fn start_local_surfnet_runloop(
         svm_locker.clone(),
         &remote_rpc_client,
         plugin_commands_tx,
+        extensions,
     )
     .await?;
 
@@ -859,6 +889,7 @@ async fn start_rpc_servers_runloop(
     svm_locker: SurfnetSvmLocker,
     remote_rpc_client: &Option<SurfnetRemoteClient>,
     plugin_commands_tx: Sender<PluginCommand>,
+    extensions: Vec<RpcExtensionRegistrar>,
 ) -> Result<(JoinHandle<()>, JoinHandle<()>, Box<dyn FnOnce() + Send>), String> {
     let rpc_addr: SocketAddr = config
         .rpc
@@ -884,8 +915,13 @@ async fn start_rpc_servers_runloop(
         plugin_commands_tx,
     );
 
-    let (rpc_handle, rpc_close_handle) =
-        start_http_rpc_server_runloop(config, middleware.clone(), simnet_events_tx.clone()).await?;
+    let (rpc_handle, rpc_close_handle) = start_http_rpc_server_runloop(
+        config,
+        middleware.clone(),
+        simnet_events_tx.clone(),
+        extensions,
+    )
+    .await?;
     let (ws_handle, ws_close_handle) =
         start_ws_rpc_server_runloop(config, middleware, simnet_events_tx).await?;
 
@@ -901,6 +937,7 @@ async fn start_http_rpc_server_runloop(
     config: &SurfpoolConfig,
     middleware: SurfpoolMiddleware,
     simnet_events_tx: Sender<SimnetEvent>,
+    extensions: Vec<RpcExtensionRegistrar>,
 ) -> Result<(JoinHandle<()>, jsonrpc_http_server::CloseHandle), String> {
     let server_bind: SocketAddr = config
         .rpc
@@ -933,6 +970,12 @@ async fn start_http_rpc_server_runloop(
     io.extend_with(rpc::accounts_scan::SurfpoolAccountsScanRpc.to_delegate());
     io.extend_with(rpc::bank_data::SurfpoolBankDataRpc.to_delegate());
     io.extend_with(rpc::admin::SurfpoolAdminRpc.to_delegate());
+
+    // Apply caller-supplied extensions (e.g. surfpool-jupiter wired up by the
+    // CLI) last so they can shadow or supplement core methods if needed.
+    for register in extensions {
+        register(&mut io);
+    }
 
     let (close_handle_tx, close_handle_rx) =
         crossbeam_channel::bounded::<Result<jsonrpc_http_server::CloseHandle, String>>(1);

@@ -177,6 +177,8 @@ pub struct StartSimnet {
     pub svm: StartSvmOptions,
     #[command(flatten)]
     pub observability: StartObservabilityOptions,
+    #[command(flatten)]
+    pub jupiter: StartJupiterOptions,
     /// Deprecated; accepted for backward compatibility.
     #[arg(
         long = "subgraph-db",
@@ -487,6 +489,43 @@ pub struct StartObservabilityOptions {
     pub metrics_addr: String,
 }
 
+#[derive(Args, PartialEq, Clone, Debug)]
+#[command(next_help_heading = "Jupiter Extension")]
+pub struct StartJupiterOptions {
+    /// Enable the `surfnet_jupiterSwap` RPC method.
+    ///
+    /// When set, surfpool proxies Jupiter's `/quote` + `/swap` endpoints,
+    /// stamps the returned transaction with the local blockhash, and purges
+    /// every writable pool account the route touches so the swap lands on
+    /// the first attempt. Default: off — no upstream calls are made.
+    #[clap(
+        long = "enable-jupiter",
+        action = ArgAction::SetTrue,
+        default_value = "false"
+    )]
+    pub enable_jupiter: bool,
+    /// Base URL of the Jupiter swap API.
+    ///
+    /// Defaults to the keyless lite tier; switch to `https://api.jup.ag/swap/v1`
+    /// (or your private gateway) when supplying an API key.
+    #[arg(
+        long = "jupiter-base-url",
+        env = "SURFPOOL_JUPITER_BASE_URL",
+        value_name = "URL"
+    )]
+    pub jupiter_base_url: Option<String>,
+    /// API key forwarded to Jupiter as the `x-api-key` header.
+    ///
+    /// Read from the environment so it never lands in shell history.
+    #[arg(
+        long = "jupiter-api-key",
+        env = "SURFPOOL_JUPITER_API_KEY",
+        value_name = "API_KEY",
+        hide_env_values = true
+    )]
+    pub jupiter_api_key: Option<String>,
+}
+
 #[derive(clap::ValueEnum, PartialEq, Clone, Debug)]
 pub enum NetworkType {
     /// Solana Mainnet-Beta (https://api.mainnet-beta.solana.com)
@@ -687,6 +726,25 @@ impl StartSimnet {
             subgraph: self.subgraph_config(),
             studio: self.studio_config(),
             plugin_config_path,
+        }
+    }
+
+    pub fn jupiter_config(&self) -> surfpool_jupiter::JupiterConfig {
+        let api_key = self.jupiter.jupiter_api_key.clone();
+        // Default to the lite endpoint when keyless, to the pro endpoint when
+        // a key is provided — matches Jupiter's documented entry points for
+        // each tier.
+        let base_url = self.jupiter.jupiter_base_url.clone().unwrap_or_else(|| {
+            if api_key.is_some() {
+                surfpool_jupiter::DEFAULT_JUPITER_PRO_BASE_URL.to_string()
+            } else {
+                surfpool_jupiter::DEFAULT_JUPITER_LITE_BASE_URL.to_string()
+            }
+        });
+        surfpool_jupiter::JupiterConfig {
+            enabled: self.jupiter.enable_jupiter,
+            base_url,
+            api_key,
         }
     }
 }
