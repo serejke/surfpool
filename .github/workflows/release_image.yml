@@ -1,13 +1,8 @@
 name: Build and Push Docker Image to GHCR
 
-# Splits per-architecture into native runner jobs and merges manifests at the
-# end. Currently amd64-only — arm64 is wired but commented out until we want
-# to opt back in to multi-arch (Apple Silicon via Docker Desktop, ARM Linux).
-#
-# Pattern: each arch job builds + pushes a single-platform image by digest,
-# then a merge job creates the semver-tagged manifest list pointing at the
-# collected digests. This is the canonical docker/build-push-action multi-arch
-# layout and keeps each arch's wall time independent.
+# Builds a linux/amd64 image and pushes to ghcr.io/<repo>. Apple Silicon
+# users run it via Docker Desktop's Rosetta layer, which is fast enough that
+# the multi-arch + manifest-merge complexity isn't worth carrying.
 #
 # Triggered by v* tag pushes or workflow_dispatch (pick a tag as ref in the UI).
 
@@ -22,18 +17,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-latest
-            arch: amd64
-          # - platform: linux/arm64
-          #   runner: ubuntu-24.04-arm
-          #   arch: arm64
-    runs-on: ${{ matrix.runner }}
+  build-and-push:
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -52,67 +37,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (labels only)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-
-      # Push a single-platform image identified only by digest. The merge job
-      # below attaches the human-readable tags to the manifest list.
-      - name: Build and push by digest
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: ${{ matrix.platform }}
-          labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          # ignore-error so a transient cache write doesn't fail the whole job.
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }},ignore-error=true
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
-      - name: Upload digest
-        uses: actions/upload-artifact@v4
-        with:
-          name: digests-${{ matrix.arch }}
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  merge:
-    runs-on: ubuntu-latest
-    needs: build
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Download digests
-        uses: actions/download-artifact@v4
-        with:
-          path: /tmp/digests
-          pattern: digests-*
-          merge-multiple: true
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       # latest=auto only moves the latest tag when the semver being built is
-      # the highest in the repo — so rebuilding an older tag does not roll
+      # the highest in the repo — rebuilding an older tag does not roll
       # latest backwards.
       - name: Extract metadata
         id: meta
@@ -127,13 +53,14 @@ jobs:
             type=semver,pattern={{major}}
             type=sha,prefix=sha-
 
-      - name: Create manifest list and push
-        working-directory: /tmp/digests
-        run: |
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
-
-      - name: Inspect image
-        run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          # ignore-error so a transient cache write does not fail the build.
+          cache-to: type=gha,mode=max,ignore-error=true
