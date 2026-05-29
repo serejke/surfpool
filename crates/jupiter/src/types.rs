@@ -179,39 +179,3 @@ pub struct SwapResponse {
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
 }
-
-/// Surfpool-specific extension to [`SwapResponse`].
-///
-/// Returned from `jupiter_swap` instead of the bare upstream payload so
-/// clients can see exactly which pool accounts surfpool purged from its cache
-/// to make the swap land on the first attempt, along with the local blockhash
-/// stamped onto the tx.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SurfpoolSwapResponse {
-    #[serde(flatten)]
-    pub jupiter: SwapResponse,
-    /// Local blockhash stamped into `swap_transaction`.
-    pub blockhash: String,
-    /// Base-58 encoded pubkeys whose cached snapshot was purged.
-    pub refreshed_accounts: Vec<String>,
-    /// `contextSlot` from the underlying Jupiter quote, for debugging slot
-    /// drift between Jupiter's view of mainnet and surfpool's lazy-fetched
-    /// state.
-    pub jupiter_context_slot: Option<u64>,
-}
-
-/// Parameters for `jupiter_refreshAccounts` — purges the given account
-/// snapshots from the local cache so they're re-fetched fresh on next access.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RefreshAccountsRequest {
-    /// Base-58 encoded pubkeys to purge.
-    pub accounts: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RefreshAccountsResponse {
-    pub refreshed_accounts: Vec<String>,
-}

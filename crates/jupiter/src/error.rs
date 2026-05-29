@@ -25,22 +25,3 @@ pub enum JupiterError {
     #[error("jupiter extension is disabled in this surfpool instance")]
     Disabled,
 }
-
-impl JupiterError {
-    /// Convert to the JSON-RPC error shape returned to clients. Internal
-    /// errors share a single code (`InternalError`) but the message carries
-    /// the variant so it stays grep-friendly.
-    pub fn into_rpc(self) -> jsonrpc_core::Error {
-        use jsonrpc_core::{Error, ErrorCode};
-        match self {
-            JupiterError::Pubkey { .. } | JupiterError::Disabled => {
-                Error::invalid_params(self.to_string())
-            }
-            other => Error {
-                code: ErrorCode::InternalError,
-                message: other.to_string(),
-                data: None,
-            },
-        }
-    }
-}

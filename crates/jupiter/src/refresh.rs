@@ -109,8 +109,8 @@ fn advance_clock_to_wall_now(locker: &SurfnetSvmLocker) {
 }
 
 /// Bare-bones variant of [`refresh_writable_accounts`] that takes an explicit
-/// list of pubkeys — exposed via the `jupiter_refreshAccounts` cheatcode for
-/// callers that already know which pools they want to flush.
+/// list of pubkeys, for callers that already know which pools they want to
+/// flush before re-sending a transaction they built earlier.
 pub fn refresh_accounts_by_pubkey(
     locker: &SurfnetSvmLocker,
     pubkeys: &[Pubkey],

@@ -20,7 +20,9 @@ use serde::{Deserialize, Serialize};
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use surfpool_core::{
-    runloops::RpcExtensionRegistrar, start_local_surfnet_with_extensions, surfnet::svm::SurfnetSvm,
+    runloops::{HttpRequestMiddlewareFactory, RpcExtensionRegistrar},
+    start_local_surfnet_with_extensions,
+    surfnet::svm::SurfnetSvm,
 };
 use surfpool_types::{SanitizedConfig, SimnetCommand, SimnetEvent, SubgraphEvent};
 use txtx_core::{
@@ -214,19 +216,24 @@ pub async fn handle_start_local_surfnet_command(
     let simnet_commands_tx_copy = simnet_commands_tx.clone();
     let config_copy = config.clone();
 
-    // Build the RPC extension registrars from configured opt-in features.
-    let mut extensions: Vec<RpcExtensionRegistrar> = Vec::new();
+    // Build opt-in features. The Jupiter extension mounts a transparent
+    // `/jupiter/*` HTTP proxy via the RPC server's request-middleware hook —
+    // not a JSON-RPC method — so any stock Jupiter client pointed at
+    // `<SURFPOOL_URL>/jupiter` works unmodified.
+    let extensions: Vec<RpcExtensionRegistrar> = Vec::new();
     let jupiter_config = cmd.jupiter_config();
-    if jupiter_config.enabled {
+    let http_middleware: Option<HttpRequestMiddlewareFactory> = if jupiter_config.enabled {
         let jupiter_base_url = jupiter_config.base_url.clone();
-        extensions.push(Box::new(move |io| {
-            surfpool_jupiter::register_extension(io, jupiter_config);
-        }));
         let _ = simnet_events_tx.send(SimnetEvent::info(format!(
-            "Jupiter extension enabled: jupiter_quote/jupiter_swap proxied to {}",
+            "Jupiter extension enabled: <RPC_URL>/jupiter/* proxied to {}",
             jupiter_base_url
         )));
-    }
+        Some(Box::new(move |locker, remote_client| {
+            surfpool_jupiter::make_http_middleware(jupiter_config, locker, remote_client)
+        }))
+    } else {
+        None
+    };
 
     let simnet_events_tx_for_thread = simnet_events_tx.clone();
     let simnet_handle = hiro_system_kit::thread_named("simnet")
@@ -238,6 +245,7 @@ pub async fn handle_start_local_surfnet_command(
                 simnet_commands_rx,
                 geyser_events_rx,
                 extensions,
+                http_middleware,
             );
             if let Err(e) = hiro_system_kit::nestable_block_on(future) {
                 // Send the error through the event channel so the main thread can handle it
