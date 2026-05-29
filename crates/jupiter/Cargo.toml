@@ -16,8 +16,7 @@ path = "src/lib.rs"
 base64 = { workspace = true }
 bincode = { workspace = true }
 jsonrpc-core = { workspace = true }
-jsonrpc-core-client = { workspace = true }
-jsonrpc-derive = { workspace = true }
+jsonrpc-http-server = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-tls", "json"] }
 serde = { workspace = true }

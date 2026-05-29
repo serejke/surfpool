@@ -157,6 +157,19 @@ fn check_port_availability(addr: SocketAddr, server_type: &str) -> Result<(), St
 pub type RpcExtensionRegistrar =
     Box<dyn FnOnce(&mut MetaIoHandler<Option<RunloopContext>, SurfpoolMiddleware>) + Send>;
 
+/// Boxed factory that builds an HTTP-level `RequestMiddleware` for the RPC
+/// server, given the live SVM locker and the remote client. Used by
+/// surfpool-cli (and integrators) to mount path-routed HTTP surfaces — e.g.
+/// surfpool-jupiter's transparent `/jupiter/*` proxy — without
+/// `surfpool-core` having to depend on them. Invoked once at server start.
+pub type HttpRequestMiddlewareFactory = Box<
+    dyn FnOnce(
+            SurfnetSvmLocker,
+            Option<SurfnetRemoteClient>,
+        ) -> Arc<dyn jsonrpc_http_server::RequestMiddleware>
+        + Send,
+>;
+
 pub async fn start_local_surfnet_runloop(
     svm_locker: SurfnetSvmLocker,
     config: SurfpoolConfig,
@@ -171,13 +184,16 @@ pub async fn start_local_surfnet_runloop(
         simnet_commands_rx,
         geyser_events_rx,
         Vec::new(),
+        None,
     )
     .await
 }
 
 /// Variant of [`start_local_surfnet_runloop`] that accepts additional RPC
 /// extensions. Each registrar is invoked once against the freshly built HTTP
-/// IO handler, in the order provided.
+/// IO handler, in the order provided. `http_middleware` optionally mounts a
+/// path-routed HTTP surface (e.g. the Jupiter `/jupiter/*` proxy) ahead of
+/// the JSON-RPC handler.
 pub async fn start_local_surfnet_runloop_with_extensions(
     svm_locker: SurfnetSvmLocker,
     config: SurfpoolConfig,
@@ -185,6 +201,7 @@ pub async fn start_local_surfnet_runloop_with_extensions(
     simnet_commands_rx: Receiver<SimnetCommand>,
     geyser_events_rx: Receiver<GeyserEvent>,
     extensions: Vec<RpcExtensionRegistrar>,
+    http_middleware: Option<HttpRequestMiddlewareFactory>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let Some(simnet) = config.simnets.first() else {
         return Ok(());
@@ -254,6 +271,7 @@ pub async fn start_local_surfnet_runloop_with_extensions(
         &remote_rpc_client,
         plugin_commands_tx,
         extensions,
+        http_middleware,
     )
     .await?;
 
@@ -890,6 +908,7 @@ async fn start_rpc_servers_runloop(
     remote_rpc_client: &Option<SurfnetRemoteClient>,
     plugin_commands_tx: Sender<PluginCommand>,
     extensions: Vec<RpcExtensionRegistrar>,
+    http_middleware: Option<HttpRequestMiddlewareFactory>,
 ) -> Result<(JoinHandle<()>, JoinHandle<()>, Box<dyn FnOnce() + Send>), String> {
     let rpc_addr: SocketAddr = config
         .rpc
@@ -907,6 +926,11 @@ async fn start_rpc_servers_runloop(
 
     let simnet_events_tx = svm_locker.simnet_events_tx();
 
+    // Build the optional HTTP request-middleware (e.g. the Jupiter
+    // `/jupiter/*` proxy) before the locker is moved into SurfpoolMiddleware.
+    let http_request_middleware =
+        http_middleware.map(|factory| factory(svm_locker.clone(), remote_rpc_client.clone()));
+
     let middleware = SurfpoolMiddleware::new(
         svm_locker,
         simnet_commands_tx,
@@ -920,6 +944,7 @@ async fn start_rpc_servers_runloop(
         middleware.clone(),
         simnet_events_tx.clone(),
         extensions,
+        http_request_middleware,
     )
     .await?;
     let (ws_handle, ws_close_handle) =
@@ -933,11 +958,26 @@ async fn start_rpc_servers_runloop(
     Ok((rpc_handle, ws_handle, shutdown_rpc_servers))
 }
 
+/// Adapts an `Arc<dyn RequestMiddleware>` into the concrete-typed
+/// `RequestMiddleware` that `ServerBuilder::request_middleware<T>` requires
+/// (there's no blanket impl for the trait object). Pure delegation.
+struct SharedRequestMiddleware(Arc<dyn jsonrpc_http_server::RequestMiddleware>);
+
+impl jsonrpc_http_server::RequestMiddleware for SharedRequestMiddleware {
+    fn on_request(
+        &self,
+        request: jsonrpc_http_server::hyper::Request<jsonrpc_http_server::hyper::Body>,
+    ) -> jsonrpc_http_server::RequestMiddlewareAction {
+        self.0.on_request(request)
+    }
+}
+
 async fn start_http_rpc_server_runloop(
     config: &SurfpoolConfig,
     middleware: SurfpoolMiddleware,
     simnet_events_tx: Sender<SimnetEvent>,
     extensions: Vec<RpcExtensionRegistrar>,
+    http_request_middleware: Option<Arc<dyn jsonrpc_http_server::RequestMiddleware>>,
 ) -> Result<(JoinHandle<()>, jsonrpc_http_server::CloseHandle), String> {
     let server_bind: SocketAddr = config
         .rpc
@@ -982,12 +1022,17 @@ async fn start_http_rpc_server_runloop(
 
     let _handle = hiro_system_kit::thread_named("RPC Handler")
         .spawn(move || {
-            let server = match ServerBuilder::new(io)
+            let mut builder = ServerBuilder::new(io)
                 .cors(DomainsValidation::Disabled)
                 .threads(6)
-                .max_request_body_size(15 * 1024 * 1024)
-                .start_http(&server_bind)
-            {
+                .max_request_body_size(15 * 1024 * 1024);
+            // Mount the optional path-routed HTTP surface (e.g. Jupiter's
+            // `/jupiter/*` proxy) ahead of JSON-RPC dispatch. Non-matching
+            // paths fall through to the JSON-RPC handler untouched.
+            if let Some(mw) = http_request_middleware {
+                builder = builder.request_middleware(SharedRequestMiddleware(mw));
+            }
+            let server = match builder.start_http(&server_bind) {
                 Ok(server) => server,
                 Err(e) => {
                     let error = format!("Failed to start RPC server: {:?}", e);

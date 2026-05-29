@@ -48,6 +48,7 @@ pub async fn start_local_surfnet(
         simnet_commands_rx,
         geyser_events_rx,
         Vec::new(),
+        None,
     )
     .await
 }
@@ -55,6 +56,8 @@ pub async fn start_local_surfnet(
 /// Variant of [`start_local_surfnet`] that accepts additional RPC extensions
 /// (e.g. surfpool-jupiter wired up by the CLI). Each registrar is invoked
 /// once against the freshly built HTTP RPC IO handler, in the order provided.
+/// `http_middleware` optionally mounts a path-routed HTTP surface (e.g. the
+/// Jupiter `/jupiter/*` proxy) ahead of the JSON-RPC handler.
 pub async fn start_local_surfnet_with_extensions(
     surfnet_svm: SurfnetSvm,
     config: SurfpoolConfig,
@@ -62,6 +65,7 @@ pub async fn start_local_surfnet_with_extensions(
     simnet_commands_rx: Receiver<SimnetCommand>,
     geyser_events_rx: Receiver<GeyserEvent>,
     extensions: Vec<runloops::RpcExtensionRegistrar>,
+    http_middleware: Option<runloops::HttpRequestMiddlewareFactory>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let svm_locker = SurfnetSvmLocker::new(surfnet_svm);
     runloops::start_local_surfnet_runloop_with_extensions(
@@ -71,6 +75,7 @@ pub async fn start_local_surfnet_with_extensions(
         simnet_commands_rx,
         geyser_events_rx,
         extensions,
+        http_middleware,
     )
     .await
 }
