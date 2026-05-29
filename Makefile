@@ -7,7 +7,7 @@
 #   IMAGE=$(LOCAL_IMAGE) make run
 
 LOCAL_IMAGE ?= surfpool:local
-IMAGE       ?= ghcr.io/serejke/surfpool:1.3.0-ghcr.3
+IMAGE       ?= ghcr.io/serejke/surfpool:1.3.0-ghcr.4
 BUILDER     ?= desktop-linux
 # Force the amd64 manifest so the image runs on Apple Silicon via QEMU.
 # Native linux/amd64 hosts ignore this flag.
