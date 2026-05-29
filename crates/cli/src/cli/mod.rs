@@ -492,12 +492,15 @@ pub struct StartObservabilityOptions {
 #[derive(Args, PartialEq, Clone, Debug)]
 #[command(next_help_heading = "Jupiter Extension")]
 pub struct StartJupiterOptions {
-    /// Enable the `surfnet_jupiterSwap` RPC method.
+    /// Mount the transparent Jupiter REST proxy at `<RPC_URL>/jupiter/*`.
     ///
-    /// When set, surfpool proxies Jupiter's `/quote` + `/swap` endpoints,
-    /// stamps the returned transaction with the local blockhash, and purges
-    /// every writable pool account the route touches so the swap lands on
-    /// the first attempt. Default: off — no upstream calls are made.
+    /// When set, surfpool serves Jupiter's REST API verbatim under the
+    /// `/jupiter` path prefix — point any stock Jupiter client at
+    /// `<RPC_URL>/jupiter` and it works unmodified. On the `/swap` path
+    /// surfpool stamps the returned transaction with the local blockhash and
+    /// purges every writable pool account the route touches so the swap lands
+    /// on the first attempt; all other paths (`/quote`, `/price/v3`, …) are
+    /// passed through. Default: off — no upstream calls are made.
     #[clap(
         long = "enable-jupiter",
         action = ArgAction::SetTrue,
