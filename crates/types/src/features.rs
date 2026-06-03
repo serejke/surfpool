@@ -99,8 +99,8 @@ pub fn parse_feature_pubkey(s: &str) -> Result<Pubkey, String> {
         available.sort();
         return Err(format!(
             "Available features:\n{}\n\nUnknown feature: '{}'. Not a known agave feature gate. Available features listed above.",
+            available.join("\n"),
             pubkey,
-            available.join("\n")
         ));
     }
 
