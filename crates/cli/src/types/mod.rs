@@ -19,7 +19,9 @@ impl Framework {
     pub fn get_interpolated_program_deployment_template(&self, program_name: &str) -> String {
         match self {
             Framework::Anchor => get_interpolated_anchor_program_deployment_template(program_name),
-            Framework::Typhoon => todo!(),
+            Framework::Typhoon => {
+                unimplemented!("Typhoon framework templates are not yet implemented")
+            }
             Framework::Native | Framework::Steel | Framework::Pinocchio => {
                 get_interpolated_native_program_deployment_template(program_name)
             }
@@ -34,7 +36,9 @@ impl Framework {
             Framework::Anchor => {
                 get_in_memory_interpolated_anchor_program_deployment_template(program_name)
             }
-            Framework::Typhoon => todo!(),
+            Framework::Typhoon => {
+                unimplemented!("Typhoon framework templates are not yet implemented")
+            }
             Framework::Native | Framework::Steel | Framework::Pinocchio => {
                 get_in_memory_interpolated_native_program_deployment_template(program_name)
             }
@@ -91,6 +95,7 @@ impl std::str::FromStr for Framework {
             "anchor" => Ok(Framework::Anchor),
             "native" => Ok(Framework::Native),
             "steel" => Ok(Framework::Steel),
+            "pinocchio" => Ok(Framework::Pinocchio),
             "typhoon" => Ok(Framework::Typhoon),
             _ => Err(format!("Unknown framework: {}", s)),
         }
