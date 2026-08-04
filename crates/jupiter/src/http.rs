@@ -35,7 +35,6 @@ use jsonrpc_http_server::{
     hyper::{Body, Method, Request, Response, StatusCode, body::to_bytes},
 };
 use solana_commitment_config::CommitmentConfig;
-use solana_message::VersionedMessage;
 use solana_pubkey::Pubkey;
 use solana_signature::Signature;
 use solana_transaction::versioned::VersionedTransaction;
@@ -237,10 +236,7 @@ impl TaskCtx {
         let epoch_info = self.locker.get_epoch_info();
         let computed_lvbh = epoch_info.block_height + MAX_RECENT_BLOCKHASHES_STANDARD as u64;
 
-        match &mut tx.message {
-            VersionedMessage::Legacy(m) => m.recent_blockhash = blockhash,
-            VersionedMessage::V0(m) => m.recent_blockhash = blockhash,
-        }
+        tx.message.set_recent_blockhash(blockhash);
         for sig in tx.signatures.iter_mut() {
             *sig = Signature::default();
         }
