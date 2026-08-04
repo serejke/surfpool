@@ -12065,28 +12065,28 @@ dependencies = [
 
 [[package]]
 name = "surfpool-jupiter"
-version = "1.3.1"
+version = "1.5.0"
 dependencies = [
  "base64 0.22.1",
  "bincode",
  "jsonrpc-core",
  "jsonrpc-http-server",
- "log 0.4.29",
+ "log 0.4.33",
  "reqwest 0.12.28",
  "serde",
  "serde_derive",
  "serde_json",
- "solana-clock 3.0.0",
+ "solana-clock 3.1.1",
  "solana-commitment-config",
- "solana-hash 3.1.0",
- "solana-message 3.1.0",
- "solana-program-pack 3.0.0",
+ "solana-hash 4.5.0",
+ "solana-message 4.3.0",
+ "solana-program-pack 3.1.0",
  "solana-pubkey 3.0.0",
  "solana-rpc-client-api",
  "solana-signature",
- "solana-transaction",
+ "solana-transaction 4.1.5",
  "spl-token-2022-interface",
- "spl-token-interface",
+ "spl-token-interface 2.0.0",
  "surfpool-core",
  "thiserror 2.0.18",
 ]
